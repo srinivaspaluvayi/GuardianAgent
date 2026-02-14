@@ -173,6 +173,3 @@ tests/
 pytest
 ```
 
-## License
-
-MIT. See [LICENSE](LICENSE).
