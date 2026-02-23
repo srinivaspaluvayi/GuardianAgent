@@ -1,1 +1,1 @@
-"""Redis Streams and consumer."""
+# Stream ingestion

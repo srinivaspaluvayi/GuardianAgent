@@ -1,98 +1,58 @@
-"""LLM-based risk scoring. Supports Ollama (local, secure) or any OpenAI-compatible API."""
+"""Calls LLM with action + context; returns risk score and decision (allow/block/needs_approval/rewrite)."""
 import json
-import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-from app.config import get_settings
+from openai import AsyncOpenAI
+
+from app.config import settings
+from app.models import Action
+
+# Decision: allow | block | needs_approval | rewrite
+SCORER_SYSTEM = """You are a risk scorer for agent actions. Given an action (type, resource, payload summary), output JSON only with:
+- "score": number in [0, 1] (0=no risk, 1=high risk)
+- "decision": one of "allow", "block", "needs_approval", "rewrite"
+- "reason": short explanation
+
+Rules: Block or needs_approval for sensitive paths (/etc/, .env, keys), external sends, PII. Allow only clearly safe actions. Use rewrite when the action can be made safe by redacting or restricting."""
 
 
-# Prompt tuned for a security-policy-trained model; adjust if your Ollama model expects different format
-SYSTEM_PROMPT = """You are a security policy evaluator. Given an action an agent is about to perform, output a risk score from 0.0 (no risk) to 1.0 (maximum risk) and brief reasons.
+async def score_action(action: Action) -> tuple[float, str, str]:
+    """
+    Returns (score, decision, reason). decision is one of allow, block, needs_approval, rewrite.
+    """
+    if not settings.openai_api_key:
+        # No key: treat as low risk allow for testing
+        return 0.0, "allow", "no LLM configured"
 
-Apply your security policy training. Consider: data sensitivity (PII, PHI, PCI, secrets), destination (internal vs external), exfiltration risk, and whether the action matches safe practices.
-
-Respond with ONLY a single JSON object, no other text, in this exact format:
-{"risk_score": <number 0.0-1.0>, "risk_factors": ["reason1", "reason2", ...]}"""
-
-
-def _build_user_message(intent: Dict[str, Any]) -> str:
-    action = intent.get("action", {}) or {}
-    context = intent.get("context", {}) or {}
-    # Redact long payloads for token safety; keep structure
-    args_preview = str(action.get("args", {}))[:500]
-    return (
-        f"Action type: {action.get('type', '')}\n"
-        f"Tool: {action.get('tool', '')}\n"
-        f"Target: {action.get('target', '')}\n"
-        f"Target domain: {action.get('target_domain', '')}\n"
-        f"Args (preview): {args_preview}\n"
-        f"Data classification: {context.get('data_classification', [])}\n"
-        f"Workspace: {context.get('workspace', '')}"
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    payload_summary = json.dumps(action.payload)[:500] if action.payload else "{}"
+    user_content = (
+        f"Action type: {action.type}\nResource: {action.resource or '(none)'}\n"
+        f"Payload (summary): {payload_summary}\n"
+        "Output JSON with score, decision, reason only."
     )
-
-
-def _parse_llm_response(text: str) -> Tuple[float, List[str]]:
-    """Extract risk_score and risk_factors from LLM response. Returns (0.0, []) on parse failure."""
-    text = text.strip()
-    # Try to find a JSON object in the response
-    match = re.search(r"\{[^{}]*\"risk_score\"[^{}]*\}", text)
-    if not match:
-        match = re.search(r"\{[\s\S]*?\}", text)
-    if not match:
-        return 0.0, []
     try:
-        data = json.loads(match.group())
-        score = float(data.get("risk_score", 0.0))
-        score = max(0.0, min(1.0, score))
-        factors = data.get("risk_factors") or []
-        if isinstance(factors, list):
-            factors = [str(f) for f in factors[:10]]
-        else:
-            factors = []
-        return score, factors
-    except (json.JSONDecodeError, TypeError, ValueError):
-        return 0.0, []
-
-
-def _llm_enabled(settings) -> bool:
-    """Use LLM when Ollama base_url is set or when API key is set (OpenAI etc.)."""
-    if settings.llm_base_url and settings.llm_base_url.strip():
-        return True
-    if settings.llm_api_key and settings.llm_api_key.strip():
-        return True
-    return False
-
-
-def score_risk(intent: Dict[str, Any]) -> Tuple[float, List[str], Optional[Dict[str, Any]]]:
-    """
-    Returns (risk_score 0.0-1.0, risk_factors/reasons, optional safe_rewrite).
-    Uses Ollama if GUARDIAN_LLM_BASE_URL is set (e.g. http://localhost:11434/v1), or OpenAI if GUARDIAN_LLM_API_KEY is set.
-    Otherwise returns (0.0, [], None) for policy-only scoring.
-    """
-    settings = get_settings()
-    if not _llm_enabled(settings):
-        return 0.0, [], None
-
-    try:
-        from openai import OpenAI
-
-        # Ollama does not require an API key; OpenAI client needs a non-empty string when base_url is set
-        api_key = (settings.llm_api_key or "").strip() or "ollama"
-        base_url = (settings.llm_base_url or "").strip() or None
-
-        client = OpenAI(api_key=api_key, base_url=base_url)
-        resp = client.chat.completions.create(
+        resp = await client.chat.completions.create(
             model=settings.llm_model,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": _build_user_message(intent)},
+                {"role": "system", "content": SCORER_SYSTEM},
+                {"role": "user", "content": user_content},
             ],
-            max_tokens=256,
-            temperature=0.1,
+            max_tokens=300,
         )
-        content = (resp.choices[0].message.content or "").strip()
-        score, reasons = _parse_llm_response(content)
-        return score, reasons, None
-    except Exception:
-        # On any LLM failure, fall back to no LLM signal (policy-only)
-        return 0.0, [], None
+        text = resp.choices[0].message.content or "{}"
+        # Parse JSON from response (may be wrapped in markdown)
+        text = text.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(l for l in lines if l.strip() != "```" and not l.strip().startswith("```json"))
+        data = json.loads(text)
+        score = float(data.get("score", 0.0))
+        decision = str(data.get("decision", "allow")).lower()
+        if decision not in ("allow", "block", "needs_approval", "rewrite"):
+            decision = "allow"
+        reason = str(data.get("reason", ""))[:500]
+        return score, decision, reason
+    except Exception as e:
+        # On error, default to needs_approval so we don't allow blindly
+        return 0.8, "needs_approval", f"scorer error: {e!s}"[:200]
