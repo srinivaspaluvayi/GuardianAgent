@@ -63,6 +63,5 @@ POST a policy with `definition` like:
 
 Resource patterns support glob (`/tmp/*`) or regex (`re:^/etc/.*\\.key$`).
 
-## License
 
-MIT
+=======
