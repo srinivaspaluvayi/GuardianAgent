@@ -1,51 +1,26 @@
-"""Load policies from Postgres (with optional in-memory cache)."""
-from typing import Any, Dict, List
-
-from app.db import get_db
-from app.db_models import Policy as PolicyModel
-from app.policy.allowlists import EXTERNAL_DOMAINS_ALLOWLIST
+"""Loads policy definitions from MongoDB and feeds them to the engine."""
+from app.db import POLICIES_COLLECTION
+from app.models import Action
+from app.policy.engine import evaluate
 
 
-def _policy_row_to_dict(row: PolicyModel) -> Dict[str, Any]:
-    p = dict(row.policy_jsonb)
-    p["policy_id"] = row.policy_id
-    p["version"] = row.version
-    p["priority"] = row.priority
-    p["enabled"] = row.enabled
-    return p
+def _rules_from_docs(docs: list[dict]) -> list[dict]:
+    rules: list[dict] = []
+    for doc in docs:
+        defn = doc.get("definition") or {}
+        if isinstance(defn, dict) and "rules" in defn:
+            rules.extend(defn["rules"])
+    return rules
 
 
-def _resolve_allowlist_ref(policy: Dict[str, Any]) -> Dict[str, Any]:
-    """Replace allowlist name (string) with actual list for engine."""
-    out = dict(policy)
-    conditions = list(out.get("conditions", []))
-    resolved = []
-    for cond in conditions:
-        c = dict(cond)
-        if "not_in_allowlist" in c:
-            spec = dict(c["not_in_allowlist"])
-            for k, v in list(spec.items()):
-                if v == "EXTERNAL_DOMAINS_ALLOWLIST":
-                    spec[k] = list(EXTERNAL_DOMAINS_ALLOWLIST)
-            c["not_in_allowlist"] = spec
-        if "in_allowlist" in c:
-            spec = dict(c["in_allowlist"])
-            for k, v in list(spec.items()):
-                if v == "EXTERNAL_DOMAINS_ALLOWLIST":
-                    spec[k] = list(EXTERNAL_DOMAINS_ALLOWLIST)
-            c["in_allowlist"] = spec
-        resolved.append(c)
-    out["conditions"] = resolved
-    return out
+async def get_rules(db) -> list[dict]:
+    """Load all policy rules from MongoDB."""
+    cursor = db[POLICIES_COLLECTION].find({})
+    docs = await cursor.to_list(length=None)
+    return _rules_from_docs(docs)
 
 
-def load_policies_from_db() -> List[Dict[str, Any]]:
-    """Load all enabled policies from Postgres (no cache)."""
-    with get_db() as session:
-        rows = session.query(PolicyModel).filter(PolicyModel.enabled.is_(True)).all()
-        return [_resolve_allowlist_ref(_policy_row_to_dict(r)) for r in rows]
-
-
-def get_policies_cached(cache: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
-    """Return policies; cache key can be invalidated on policy update. For worker, refresh each loop or every N seconds."""
-    return load_policies_from_db()
+async def evaluate_action(db, action: Action) -> str:
+    """Load rules from DB and evaluate action. Returns allowed | denied | unknown."""
+    rules = await get_rules(db)
+    return evaluate(action, rules)

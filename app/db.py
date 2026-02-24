@@ -1,56 +1,60 @@
-"""SQLAlchemy session and Postgres setup."""
-from contextlib import contextmanager
-from typing import Generator
+"""MongoDB connection and database. Async via Motor."""
+from collections.abc import AsyncGenerator
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from motor.motor_asyncio import AsyncIOMotorClient
 
-from app.config import get_settings
+from app.config import settings
 
-Base = declarative_base()
+# Collection names
+POLICIES_COLLECTION = "policies"
+APPROVALS_COLLECTION = "approval_requests"
 
-_engine = None
-_SessionLocal = None
-
-
-def get_engine():
-    global _engine
-    if _engine is None:
-        url = get_settings().database_url
-        opts = dict(pool_pre_ping=True, echo=get_settings().debug)
-        if url.startswith("sqlite"):
-            opts["connect_args"] = {"check_same_thread": False}
-        _engine = create_engine(url, **opts)
-    return _engine
+_client: AsyncIOMotorClient | None = None
 
 
-def get_session_factory():
-    global _SessionLocal
-    if _SessionLocal is None:
-        _SessionLocal = sessionmaker(
-            autocommit=False,
-            autoflush=False,
-            bind=get_engine(),
-        )
-    return _SessionLocal
+def get_client() -> AsyncIOMotorClient:
+    """Return the global Motor client. Call after start_db()."""
+    if _client is None:
+        raise RuntimeError("DB not started; call start_db() in lifespan first.")
+    return _client
 
 
-@contextmanager
-def get_db() -> Generator[Session, None, None]:
-    """Yield a DB session; commits on success, rolls back on error."""
-    SessionLocal = get_session_factory()
-    session = SessionLocal()
+async def start_db() -> None:
+    """Create MongoDB client. Call once at app startup."""
+    global _client
+    _client = AsyncIOMotorClient(settings.mongodb_url)
+
+
+async def close_db() -> None:
+    """Close MongoDB client. Call at app shutdown."""
+    global _client
+    if _client is not None:
+        _client.close()
+        _client = None
+
+
+def get_database():
+    """Return the Guardian database (sync access for dependency injection)."""
+    return get_client()[settings.mongodb_db_name]
+
+
+async def init_db() -> None:
+    """Create indexes. Safe to call every startup."""
+    db = get_database()
+    await db[POLICIES_COLLECTION].create_index("name")
+    await db[APPROVALS_COLLECTION].create_index("status")
+    await db[APPROVALS_COLLECTION].create_index("created_at")
+
+
+async def check_db() -> bool:
+    """Returns True if MongoDB is reachable."""
     try:
-        yield session
-        session.commit()
+        await get_client().admin.command("ping")
+        return True
     except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+        return False
 
 
-def init_db() -> None:
-    """Create all tables. Use Alembic in production for migrations."""
-    import app.db_models  # noqa: F401 - register tables with Base
-    Base.metadata.create_all(bind=get_engine())
+async def get_db() -> AsyncGenerator:
+    """FastAPI dependency: yield the database instance."""
+    yield get_database()

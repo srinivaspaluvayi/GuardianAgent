@@ -1,1 +1,1 @@
-"""LLM scoring and rewrite stubs (Phase 2)."""
+# LLM risk scoring and safe rewriter

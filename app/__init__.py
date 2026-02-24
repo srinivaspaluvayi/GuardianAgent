@@ -1,1 +1,1 @@
-"""Guardian Supervisor Agent."""
+# Guardian Agent Supervisor

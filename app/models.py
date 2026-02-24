@@ -1,61 +1,78 @@
-"""Pydantic event schemas for Guardian."""
-from __future__ import annotations
-
+"""Pydantic shapes for API and pipeline. No business logic."""
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any
 
-from pydantic import BaseModel, Field
-
-DecisionType = Literal["ALLOW", "REWRITE", "BLOCK", "REQUIRE_APPROVAL"]
-Severity = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class ActionModel(BaseModel):
-    type: str
-    tool: str
-    target: str
-    method: Optional[str] = None
-    args: Dict[str, Any] = Field(default_factory=dict)
-
-
-class ContextModel(BaseModel):
-    user_prompt: Optional[str] = None
-    model_output_excerpt: Optional[str] = None
-    data_classification: List[str] = Field(default_factory=list)
-    workspace: Optional[str] = None
-    user_role: Optional[str] = None
-    attachments: List[Dict[str, Any]] = Field(default_factory=list)
-
-
-class ActionIntentEvent(BaseModel):
-    event_id: str
-    trace_id: str
-    timestamp: datetime
+# --- Approvals API ---
+class ApprovalResponse(BaseModel):
+    id: str  # MongoDB _id as string
+    action_id: str
     agent_id: str
-    session_id: str
-    user_id: str
-    action: ActionModel
-    context: ContextModel
+    action_type: str
+    resource: str
+    payload: dict[str, Any]
+    risk_score: float
+    reason: str
+    status: str
+    resolved_at: datetime | None
+    resolved_by: str | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
-class RiskModel(BaseModel):
-    score: float
-    severity: Severity
-    reasons: List[str] = Field(default_factory=list)
+class ApproveDenyBody(BaseModel):
+    comment: str | None = None
+    resolved_by: str | None = None
 
 
-class ApprovalModel(BaseModel):
-    required: bool = False
-    request_id: Optional[str] = None
+# --- Policy API ---
+class PolicyCreate(BaseModel):
+    name: str
+    kind: str  # allowlist, denylist, dsl
+    definition: dict[str, Any]
 
 
-class ActionDecisionEvent(BaseModel):
-    event_id: str
-    trace_id: str
-    intent_event_id: str
-    timestamp: datetime
-    decision: DecisionType
-    risk: RiskModel
-    policy_hits: List[str] = Field(default_factory=list)
-    rewrite: Optional[Dict[str, Any]] = None
-    approval: ApprovalModel = Field(default_factory=ApprovalModel)
+class PolicyResponse(BaseModel):
+    id: str  # MongoDB _id as string
+    name: str
+    kind: str
+    definition: dict[str, Any]
+    version: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --- Action / Decision ---
+class Action(BaseModel):
+    """Action proposed by a supervised agent."""
+    action_id: str
+    agent_id: str
+    type: str  # e.g. read_file, http_request, send_email
+    resource: str = ""  # path, URL, etc.
+    payload: dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime | None = None
+
+
+class Decision(BaseModel):
+    """Guardian decision for an action."""
+    action_id: str
+    decision: str  # allowed | blocked | needs_approval | rewritten
+    reason: str = ""
+    score: float = 0.0
+    rewritten_payload: dict[str, Any] | None = None
+    approval_id: str | None = None
+
+
+class EvaluateResponse(BaseModel):
+    """Response for POST /actions/evaluate (full pipeline)."""
+    action_id: str
+    policy_decision: str  # allowed | denied | unknown (from policy engine)
+    decision: str  # allowed | blocked | needs_approval | rewritten
+    reason: str = ""
+    score: float = 0.0
+    rewritten_payload: dict[str, Any] | None = None
+    approval_id: str | None = None
