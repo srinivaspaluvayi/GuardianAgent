@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Guardian – Approvals</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: radial-gradient(circle at top, #1d283a 0, #020617 55%, #020617 100%);
+      color: #e5e7eb;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 2.5rem 1.25rem;
+    }
+
+    .shell {
+      width: 100%;
+      max-width: 1000px;
+    }
+
+    .card {
+      background: #020617;
+      border-radius: 0.9rem;
+      border: 1px solid #1f2937;
+      box-shadow: 0 26px 70px rgba(15, 23, 42, 0.85);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid #111827;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      margin: 0;
+    }
+
+    .subtitle {
+      font-size: 0.85rem;
+      color: #9ca3af;
+    }
+
+    .card-body {
+      padding: 1.25rem 1.5rem 1.6rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.1fr);
+      gap: 1.75rem;
+    }
+
+    .card-body > div:first-child {
+      border-right: 1px solid #111827;
+      padding-right: 1.5rem;
+    }
+
+    .card-body > div:last-child {
+      padding-left: 1.5rem;
+    }
+
+    @media (max-width: 900px) {
+      .card-body {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .card-body > div:first-child {
+        border-right: none;
+        border-bottom: 1px solid #111827;
+        padding-right: 0;
+        padding-bottom: 1.25rem;
+        margin-bottom: 0.5rem;
+      }
+
+      .card-body > div:last-child {
+        padding-left: 0;
+      }
+    }
+
+    .section-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: #9ca3af;
+    }
+
+    .filter-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.6rem;
+    }
+
+    .filter-tabs {
+      display: inline-flex;
+      gap: 0.4rem;
+      background: #020617;
+      padding: 0.15rem;
+      border-radius: 999px;
+      border: 1px solid #111827;
+    }
+
+    .tab {
+      padding: 0.25rem 0.75rem;
+      font-size: 0.78rem;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      background: transparent;
+      color: #9ca3af;
+    }
+
+    .tab-active {
+      background: #0f172a;
+      color: #e5e7eb;
+    }
+
+    .approvals-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      max-height: 420px;
+      overflow: auto;
+    }
+
+    .approval-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      padding: 0.6rem 0.7rem;
+      border-radius: 0.5rem;
+      border: 1px solid #111827;
+      background: #020617;
+    }
+
+    .approval-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      font-size: 0.85rem;
+    }
+
+    .approval-main {
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+    }
+
+    .approval-title {
+      font-weight: 600;
+    }
+
+    .approval-subtitle {
+      font-size: 0.78rem;
+      color: #9ca3af;
+    }
+
+    .approval-meta {
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.15rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border: 1px solid transparent;
+    }
+
+    .pill-pending {
+      background: rgba(251, 191, 36, 0.08);
+      color: #fbbf24;
+      border-color: rgba(251, 191, 36, 0.4);
+    }
+
+    .pill-approved {
+      background: rgba(34, 197, 94, 0.08);
+      color: #4ade80;
+      border-color: rgba(34, 197, 94, 0.35);
+    }
+
+    .pill-denied {
+      background: rgba(248, 113, 113, 0.08);
+      color: #f87171;
+      border-color: rgba(248, 113, 113, 0.4);
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 0.35rem;
+      margin-top: 0.25rem;
+    }
+
+    .btn-inline {
+      border-radius: 999px;
+      border: none;
+      padding: 0.25rem 0.7rem;
+      font-size: 0.78rem;
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .btn-approve {
+      background: rgba(34, 197, 94, 0.15);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+    }
+
+    .btn-deny {
+      background: rgba(248, 113, 113, 0.15);
+      color: #fca5a5;
+      border: 1px solid rgba(248, 113, 113, 0.45);
+    }
+
+    .detail-box {
+      font-size: 0.8rem;
+      background: #020617;
+      border-radius: 0.6rem;
+      border: 1px solid #111827;
+      padding: 0.75rem 0.8rem;
+      max-height: 420px;
+      overflow: auto;
+    }
+
+    .detail-label {
+      font-size: 0.78rem;
+      color: #9ca3af;
+      margin-top: 0.4rem;
+    }
+
+    .detail-value {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+      font-size: 0.8rem;
+      margin-top: 0.15rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="card">
+      <div class="card-header">
+        <h1>Guardian – Approvals</h1>
+        <div class="subtitle">
+          Inspect pending approvals and quickly approve or deny them.
+        </div>
+      </div>
+
+      <div class="card-body">
+        <div>
+          <div class="filter-row">
+            <div class="section-title">Approvals</div>
+            <form method="get" action="/ui/approvals">
+              <div class="filter-tabs">
+                <button class="tab {% if status == 'pending' or not status %}tab-active{% endif %}" name="status" value="pending" type="submit">Pending</button>
+                <button class="tab {% if status == 'approved' %}tab-active{% endif %}" name="status" value="approved" type="submit">Approved</button>
+                <button class="tab {% if status == 'denied' %}tab-active{% endif %}" name="status" value="denied" type="submit">Denied</button>
+                <button class="tab {% if status == 'all' %}tab-active{% endif %}" name="status" value="all" type="submit">All</button>
+              </div>
+            </form>
+          </div>
+
+          {% if not approvals %}
+            <div class="field-help">No approvals found for this filter.</div>
+          {% else %}
+            <div class="approvals-list">
+              {% for a in approvals %}
+                <div class="approval-row">
+                  <div class="approval-header">
+                    <div class="approval-main">
+                      <div class="approval-title">
+                        {{ a.action_type }} · {{ a.resource or "no resource" }}
+                      </div>
+                      <div class="approval-subtitle">
+                        Action {{ a.action_id }} from agent {{ a.agent_id }}
+                      </div>
+                    </div>
+                    <span class="pill pill-{{ a.status }}">{{ a.status }}</span>
+                  </div>
+                  <div class="approval-meta">
+                    Risk {{ "%.2f" | format(a.risk_score or 0.0) }}
+                    · ID {{ a.id }}
+                    {% if a.created_at %}
+                      · Created {{ a.created_at }}
+                    {% endif %}
+                  </div>
+                  {% if a.status == "pending" %}
+                    <div class="action-buttons">
+                      <form method="post" action="/ui/approvals/{{ a.id }}/approve">
+                        <button type="submit" class="btn-inline btn-approve">Approve</button>
+                      </form>
+                      <form method="post" action="/ui/approvals/{{ a.id }}/deny">
+                        <button type="submit" class="btn-inline btn-deny">Deny</button>
+                      </form>
+                    </div>
+                  {% else %}
+                    <div class="approval-meta">
+                      {% if a.resolved_at %}
+                        Resolved {{ a.status }} at {{ a.resolved_at }}
+                      {% endif %}
+                      {% if a.resolved_by %}
+                        · by {{ a.resolved_by }}
+                      {% endif %}
+                    </div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+
+        <div>
+          <div class="section-title">Details</div>
+          <div class="detail-box">
+            <div class="detail-label">Note</div>
+            <div class="detail-value">
+              This view shows the current approvals stored by Guardian. Use the Evaluate page to generate new approvals and see them appear here.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+
