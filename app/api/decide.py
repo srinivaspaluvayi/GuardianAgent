@@ -8,7 +8,7 @@ from app.pipeline import run_pipeline
 router = APIRouter(tags=["decide"])
 
 
-@router.post("/actions/evaluate", response_model=EvaluateResponse)
+@router.post("/evaluate", response_model=EvaluateResponse)
 async def evaluate_action_endpoint(
     action: Action,
     db=Depends(get_db),
