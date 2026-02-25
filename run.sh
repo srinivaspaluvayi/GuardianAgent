@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Run Guardian Agent API. Requires MongoDB (set MONGODB_URL). Redis/streams added at deployment.
+# Run Guardian Agent API. Requires MongoDB (MONGODB_URL in .env). Redis/streams added at deployment.
 set -e
 cd "$(dirname "$0")"
-export MONGODB_URL="${MONGODB_URL:-mongodb://localhost:27017}"
+
+PORT="${PORT:-8001}"
+
 if [ -d ".venv" ]; then
-  .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+  .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --reload
 else
-  python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+  python3 -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --reload
 fi

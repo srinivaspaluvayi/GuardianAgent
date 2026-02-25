@@ -44,7 +44,7 @@ A supervisor that evaluates agent actions (via API), scores risk with an LLM and
 
 - `GET /health` – DB status
 - `GET /policies`, `POST /policies` – List and create policy rules
-- `POST /actions/evaluate` – Submit an action; get policy + LLM decision (allowed / blocked / needs_approval / rewritten)
+- `POST /evaluate` – Submit an action; get policy + LLM decision (allowed / blocked / needs_approval / rewritten)
 - `GET /approvals`, `GET /approvals/{id}` – List and get approval requests
 - `POST /approvals/{id}/approve`, `POST /approvals/{id}/deny` – Resolve pending approvals
 
